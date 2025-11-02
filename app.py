@@ -1,126 +1,135 @@
 
-import streamlit as st
-import json, math, heapq
+import streamlit as st, json, math, heapq, os
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-# ----- Load -----
+# ----- Load data (IMAGE PIXELS only) -----
 with open("data/config.json") as f:
     CFG = json.load(f)
 W_IMG, H_IMG = CFG["image_width"], CFG["image_height"]
-W_DISP, H_DISP = CFG["display_width"], CFG["display_height"]
 
 with open("data/nodes_edges.json") as f:
     DATA = json.load(f)
-NODES_IMG = DATA["nodes"]
-BASE_EDGES = DATA["edges"]
+NODES = DATA["nodes"]  # expects x_img / y_img (falls back to x/y if present)
 
-# Map helper: image px -> display coords
-def to_display(p):
-    return {"x": p["x_img"] / W_IMG * W_DISP, "y": p["y_img"] / H_IMG * H_DISP}
+def get_xy(p):
+    # Backward compatible with old schemas
+    x = p.get("x_img", p.get("x"))
+    y = p.get("y_img", p.get("y"))
+    return float(x), float(y)
 
-# Build a 'display nodes' dict on the fly
-def get_display_nodes():
-    return {name: to_display(p) for name, p in NODES_IMG.items()}
+edges_file = "data/edges_polyline.json"
+EDGES = json.load(open(edges_file)) if os.path.exists(edges_file) else []
 
-def heuristic(a, b):
-    return math.dist((a["x"], a["y"]), (b["x"], b["y"]))
+# ----- A* with edge weight = polyline length (image px) -----
+def edge_length(shape):
+    s = 0.0
+    for i in range(len(shape)-1):
+        x1,y1 = shape[i]
+        x2,y2 = shape[i+1]
+        s += math.dist((x1,y1),(x2,y2))
+    return s
 
-def astar(start, goal, edges):
-    nodes = get_display_nodes()
-    queue = [(0, start)]
-    g = {start: 0}
+def neighbors(node):
+    for e in EDGES:
+        a,b = e["nodes"]
+        if node == a: yield b, e
+        if node == b: yield a, e
+
+def astar(start, goal):
+    g = {start: 0.0}
     parent = {}
+    pq = [(0.0, start)]
     visited = set()
 
-    while queue:
-        _, cur = heapq.heappop(queue)
+    # Heuristic: straight-line in image pixels
+    def h(n):
+        x1,y1 = get_xy(NODES[n])
+        x2,y2 = get_xy(NODES[goal])
+        return math.dist((x1,y1),(x2,y2))
+
+    while pq:
+        _, cur = heapq.heappop(pq)
         if cur == goal:
             path = [goal]
             while cur in parent:
-                cur = parent[cur]
-                path.append(cur)
+                cur = parent[cur]; path.append(cur)
             return path[::-1]
-
+        if cur in visited: 
+            continue
         visited.add(cur)
-        for s, e in edges:
-            nxt = None
-            if s == cur and e not in visited: nxt = e
-            elif e == cur and s not in visited: nxt = s
-            if nxt:
-                cost = g[cur] + heuristic(nodes[cur], nodes[nxt])
-                if cost < g.get(nxt, float("inf")):
-                    g[nxt] = cost; parent[nxt] = cur
-                    f = cost + heuristic(nodes[nxt], nodes[goal])
-                    heapq.heappush(queue, (f, nxt))
+
+        for nxt, e in neighbors(cur):
+            cost = g[cur] + edge_length(e["shape"])
+            if cost < g.get(nxt, float("inf")):
+                g[nxt] = cost
+                parent[nxt] = cur
+                heapq.heappush(pq, (cost + h(nxt), nxt))
     return None
 
-def turn_instruction(p1, p2, p3):
-    v1=(p2["x"]-p1["x"], p2["y"]-p1["y"])
-    v2=(p3["x"]-p2["x"], p3["y"]-p2["y"])
-    cross = v1[0]*v2[1] - v1[1]*v2[0]
-    if cross > 0: return "Turn left"
-    elif cross < 0: return "Turn right"
-    else: return "Go straight"
-
-# ------------- UI -------------
-st.title("Indoor Navigation v1.4 — Real Floor Map")
-
-blocked = st.multiselect("Block corridor (simulate closure)", BASE_EDGES, [])
-edges = [e for e in BASE_EDGES if e not in blocked]
-
-# Draw map (always visible)
+# ----- UI -----
+st.title("IndoorNav — Stable Pixel-Coordinate Build")
 IMG = mpimg.imread("data/floor_real.png")
 
-def draw_map(path=None):
-    display_nodes = get_display_nodes()
-    fig, ax = plt.subplots(figsize=(8, 6))
-    # fit display canvas
-    ax.imshow(IMG, extent=[0, W_DISP, 0, H_DISP])
-    ax.set_xlim(0, W_DISP); ax.set_ylim(0, H_DISP)
+# Allow corridor blocking
+blocked = st.multiselect("Block corridors", [tuple(e["nodes"]) for e in EDGES], [])
+
+def is_blocked(e):
+    pair = tuple(e["nodes"])
+    return pair in blocked or pair[::-1] in blocked
+
+def draw(path=None):
+    fig, ax = plt.subplots(figsize=(10, 7))
+    # background floorplan in image pixel coordinates
+    ax.imshow(IMG, extent=[0, W_IMG, 0, H_IMG])
+    ax.set_xlim(0, W_IMG); ax.set_ylim(0, H_IMG)
     ax.set_xticks([]); ax.set_yticks([])
 
-    # nodes
-    for name, pos in display_nodes.items():
-        ax.scatter(pos["x"], pos["y"], s=30)
-        ax.text(pos["x"]+6, pos["y"]+6, name)
+    # draw corridors (polylines)
+    for e in EDGES:
+        xs = [pt[0] for pt in e["shape"]]
+        ys = [pt[1] for pt in e["shape"]]
+        ax.plot(xs, ys, "r-" if is_blocked(e) else "k-", linewidth=3, alpha=0.8)
 
-    # edges (draw all; blocked in red)
-    for s,e in BASE_EDGES:
-        x1,y1 = display_nodes[s]["x"], display_nodes[s]["y"]
-        x2,y2 = display_nodes[e]["x"], display_nodes[e]["y"]
-        if [s,e] in blocked or [e,s] in blocked:
-            ax.plot([x1,x2],[y1,y2],"r-", linewidth=2, alpha=0.9)
-        else:
-            ax.plot([x1,x2],[y1,y2],"k--", alpha=0.5)
+    # draw nodes
+    for name, p in NODES.items():
+        x,y = get_xy(p)
+        ax.scatter(x, y, c="yellow", s=90, edgecolors="black")
+        ax.text(x+12, y+12, name, color="white", fontsize=11, weight="bold")
 
-    # highlight path
+    # draw path
     if path:
-        px = [display_nodes[p]["x"] for p in path]
-        py = [display_nodes[p]["y"] for p in path]
-        ax.plot(px, py, "g-", linewidth=4)
+        xs = [get_xy(NODES[n])[0] for n in path]
+        ys = [get_xy(NODES[n])[1] for n in path]
+        ax.plot(xs, ys, "lime", linewidth=5)
 
     st.pyplot(fig, clear_figure=True)
 
-st.subheader("Floor Map")
-draw_map()
+draw()
 
-display_nodes = get_display_nodes()
-start = st.selectbox("Start", list(display_nodes.keys()))
-dest = st.selectbox("Destination", list(display_nodes.keys()))
+start = st.selectbox("Start", list(NODES.keys()))
+dest = st.selectbox("Destination", list(NODES.keys()))
 
 if st.button("Navigate"):
-    path = astar(start, dest, edges)
-    if not path:
-        st.error("No available path under current closures.")
+    if not EDGES:
+        st.error("No corridors yet. (data/edges_polyline.json is empty)")
     else:
-        st.success(" → ".join(path))
-        # turn-by-turn
-        steps = []
-        dn = display_nodes
-        for i in range(len(path)-2):
-            steps.append(turn_instruction(dn[path[i]], dn[path[i+1]], dn[path[i+2]]))
-        for i, s in enumerate(steps, 1):
-            st.write(f"{i}. {s}")
-        st.write(f"{len(steps)+1}. Arrive at {dest}")
-        draw_map(path)
+        # re-build EDGES without blocked ones
+        filtered = [e for e in EDGES if not is_blocked(e)]
+        if not filtered:
+            st.error("All corridors are blocked.")
+        else:
+            # Temporarily swap for path search
+            global EDGES_backup
+            EDGES_backup = EDGES.copy()
+            try:
+                EDGES[:] = filtered
+                path = astar(start, dest)
+            finally:
+                EDGES[:] = EDGES_backup
+
+            if not path:
+                st.error("No path under current closures.")
+            else:
+                st.success(" → ".join(path))
+                draw(path)

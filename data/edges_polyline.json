@@ -1,0 +1,24 @@
+[
+
+  {
+    "nodes": [      "Entrance",      "Hallway1"    ],
+    "shape": [      [ 500,150 ],  [ 500,350 ]    ]
+  },
+  {
+    "nodes": [      "Hallway1",      "Hallway2"    ],
+    "shape": [      [500,350 ],      [ 350,350 ],   [ 350,450 ]
+    ]
+  },
+  {
+    "nodes": [      "Hallway2",      "Lab"    ],
+    "shape": [    [ 350,450 ],    [ 350,500  ],  [ 700,500  ],      [  700,600  ]    ]
+  },
+  {
+    "nodes": [      "Hallway2",      "Stairs"    ],
+    "shape": [        [ 350,450 ],     [ 350,600],   [ 300,600 ]    ]
+  },
+  {
+    "nodes": [      "Hallway2",      "Cardiology"    ],
+    "shape": [ [ 350,450 ],   [ 350,700 ]    ]
+  }
+]
