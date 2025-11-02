@@ -1,21 +1,33 @@
+
 import streamlit as st
 import json, math, heapq
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-# Load map
+# ----- Load -----
+with open("data/config.json") as f:
+    CFG = json.load(f)
+W_IMG, H_IMG = CFG["image_width"], CFG["image_height"]
+W_DISP, H_DISP = CFG["display_width"], CFG["display_height"]
+
 with open("data/nodes_edges.json") as f:
-    data = json.load(f)
+    DATA = json.load(f)
+NODES_IMG = DATA["nodes"]
+BASE_EDGES = DATA["edges"]
 
-nodes = data["nodes"]
-base_edges = data["edges"]
+# Map helper: image px -> display coords
+def to_display(p):
+    return {"x": p["x_img"] / W_IMG * W_DISP, "y": p["y_img"] / H_IMG * H_DISP}
 
+# Build a 'display nodes' dict on the fly
+def get_display_nodes():
+    return {name: to_display(p) for name, p in NODES_IMG.items()}
 
-# ---------------- A* Pathfinding ----------------
 def heuristic(a, b):
     return math.dist((a["x"], a["y"]), (b["x"], b["y"]))
 
 def astar(start, goal, edges):
+    nodes = get_display_nodes()
     queue = [(0, start)]
     g = {start: 0}
     parent = {}
@@ -31,14 +43,10 @@ def astar(start, goal, edges):
             return path[::-1]
 
         visited.add(cur)
-
         for s, e in edges:
             nxt = None
-            if s == cur and e not in visited:
-                nxt = e
-            elif e == cur and s not in visited:
-                nxt = s
-
+            if s == cur and e not in visited: nxt = e
+            elif e == cur and s not in visited: nxt = s
             if nxt:
                 cost = g[cur] + heuristic(nodes[cur], nodes[nxt])
                 if cost < g.get(nxt, float("inf")):
@@ -47,76 +55,72 @@ def astar(start, goal, edges):
                     heapq.heappush(queue, (f, nxt))
     return None
 
-
-# ---------------- Turn Instruction ----------------
 def turn_instruction(p1, p2, p3):
-    v1 = (p2["x"] - p1["x"], p2["y"] - p1["y"])
-    v2 = (p3["x"] - p2["x"], p3["y"] - p2["y"])
-    cross = v1[0] * v2[1] - v1[1] * v2[0]
+    v1=(p2["x"]-p1["x"], p2["y"]-p1["y"])
+    v2=(p3["x"]-p2["x"], p3["y"]-p2["y"])
+    cross = v1[0]*v2[1] - v1[1]*v2[0]
     if cross > 0: return "Turn left"
     elif cross < 0: return "Turn right"
     else: return "Go straight"
 
+# ------------- UI -------------
+st.title("Indoor Navigation v1.4 — Real Floor Map")
 
-# ---------------- UI ----------------
-st.title("Indoor Navigation : Single floor")
+blocked = st.multiselect("Block corridor (simulate closure)", BASE_EDGES, [])
+edges = [e for e in BASE_EDGES if e not in blocked]
 
-# Block edges first and show map immediately
-blocked = st.multiselect("Block corridor (simulate closed hallway)", base_edges, [])
-edges = [e for e in base_edges if e not in blocked]
-
-img = mpimg.imread("data/floor_map.png")
+# Draw map (always visible)
+IMG = mpimg.imread("data/floor_real.png")
 
 def draw_map(path=None):
-    fig, ax = plt.subplots()
-    ax.imshow(img, extent=[0,400,0,300])
+    display_nodes = get_display_nodes()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    # fit display canvas
+    ax.imshow(IMG, extent=[0, W_DISP, 0, H_DISP])
+    ax.set_xlim(0, W_DISP); ax.set_ylim(0, H_DISP)
+    ax.set_xticks([]); ax.set_yticks([])
 
-    # draw nodes
-    for name, pos in nodes.items():
-        ax.scatter(pos["x"], pos["y"], color="blue")
-        ax.text(pos["x"]+5, pos["y"]+5, name)
+    # nodes
+    for name, pos in display_nodes.items():
+        ax.scatter(pos["x"], pos["y"], s=30)
+        ax.text(pos["x"]+6, pos["y"]+6, name)
 
-    # draw edges
-    for s,e in base_edges:
-        x1,y1 = nodes[s]["x"], nodes[s]["y"]
-        x2,y2 = nodes[e]["x"], nodes[e]["y"]
-
+    # edges (draw all; blocked in red)
+    for s,e in BASE_EDGES:
+        x1,y1 = display_nodes[s]["x"], display_nodes[s]["y"]
+        x2,y2 = display_nodes[e]["x"], display_nodes[e]["y"]
         if [s,e] in blocked or [e,s] in blocked:
-            ax.plot([x1,x2],[y1,y2],"r-",linewidth=2)   # blocked shown red
+            ax.plot([x1,x2],[y1,y2],"r-", linewidth=2, alpha=0.9)
         else:
-            ax.plot([x1,x2],[y1,y2],"k--",alpha=0.4)
+            ax.plot([x1,x2],[y1,y2],"k--", alpha=0.5)
 
-    # highlight path if exists
+    # highlight path
     if path:
-        px=[nodes[p]["x"] for p in path]
-        py=[nodes[p]["y"] for p in path]
-        ax.plot(px,py,"g-",linewidth=4)
+        px = [display_nodes[p]["x"] for p in path]
+        py = [display_nodes[p]["y"] for p in path]
+        ax.plot(px, py, "g-", linewidth=4)
 
-    st.pyplot(fig)
+    st.pyplot(fig, clear_figure=True)
 
-
-# Display map initially
-st.subheader("Floor Map View")
+st.subheader("Floor Map")
 draw_map()
 
-# User selects routing
-start = st.selectbox("Start", nodes.keys())
-dest = st.selectbox("Destination", nodes.keys())
+display_nodes = get_display_nodes()
+start = st.selectbox("Start", list(display_nodes.keys()))
+dest = st.selectbox("Destination", list(display_nodes.keys()))
 
 if st.button("Navigate"):
     path = astar(start, dest, edges)
     if not path:
-        st.error("No available path")
+        st.error("No available path under current closures.")
     else:
         st.success(" → ".join(path))
-
-        # Turn-by-turn instructions
-        st.write("Turn-by-turn:")
+        # turn-by-turn
         steps = []
+        dn = display_nodes
         for i in range(len(path)-2):
-            steps.append(turn_instruction(nodes[path[i]],nodes[path[i+1]],nodes[path[i+2]]))
-        for i,ins in enumerate(steps,1):
-            st.write(f"{i}. {ins}")
+            steps.append(turn_instruction(dn[path[i]], dn[path[i+1]], dn[path[i+2]]))
+        for i, s in enumerate(steps, 1):
+            st.write(f"{i}. {s}")
         st.write(f"{len(steps)+1}. Arrive at {dest}")
-
         draw_map(path)

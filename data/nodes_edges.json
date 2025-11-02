@@ -1,28 +1,28 @@
 {
   "nodes": {
     "Entrance": {
-      "x": 50,
-      "y": 250
+      "x_img": 512,
+      "y_img": 952
     },
     "Hallway1": {
-      "x": 150,
-      "y": 250
+      "x_img": 409,
+      "y_img": 716
     },
     "Hallway2": {
-      "x": 250,
-      "y": 250
+      "x_img": 716,
+      "y_img": 716
     },
     "Lab": {
-      "x": 350,
-      "y": 250
+      "x_img": 798,
+      "y_img": 430
     },
     "Stairs": {
-      "x": 150,
-      "y": 150
+      "x_img": 225,
+      "y_img": 512
     },
     "Cardiology": {
-      "x": 250,
-      "y": 150
+      "x_img": 184,
+      "y_img": 286
     }
   },
   "edges": [
