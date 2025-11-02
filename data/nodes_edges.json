@@ -1,0 +1,50 @@
+{
+  "nodes": {
+    "Entrance": {
+      "x": 10,
+      "y": 180
+    },
+    "Hallway1": {
+      "x": 100,
+      "y": 180
+    },
+    "Hallway2": {
+      "x": 200,
+      "y": 180
+    },
+    "Lab": {
+      "x": 300,
+      "y": 180
+    },
+    "Stairs": {
+      "x": 100,
+      "y": 80
+    },
+    "Cardiology": {
+      "x": 200,
+      "y": 80
+    }
+  },
+  "edges": [
+    [
+      "Entrance",
+      "Hallway1"
+    ],
+    [
+      "Hallway1",
+      "Hallway2"
+    ],
+    [
+      "Hallway2",
+      "Lab"
+    ],
+    [
+      "Hallway1",
+      "Stairs"
+    ],
+    [
+      "Hallway2",
+      "Cardiology"
+    ]
+  ]
+}
