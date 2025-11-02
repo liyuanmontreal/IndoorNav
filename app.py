@@ -99,9 +99,24 @@ def draw(path=None):
 
     # draw path
     if path:
-        xs = [get_xy(NODES[n])[0] for n in path]
-        ys = [get_xy(NODES[n])[1] for n in path]
-        ax.plot(xs, ys, "lime", linewidth=5)
+        # xs = [get_xy(NODES[n])[0] for n in path]
+        # ys = [get_xy(NODES[n])[1] for n in path]
+        # ax.plot(xs, ys, "lime", linewidth=5)
+
+        # ✅ Draw route along corridor polylines
+        route_x, route_y = [], []
+
+        for i in range(len(path)-1):
+            # find the corridor between two nodes
+            segment = next(e for e in EDGES if set(e["nodes"]) == set([path[i], path[i+1]]))
+            
+            # append shape points in order
+            for (x, y) in segment["shape"]:
+                route_x.append(x)
+                route_y.append(y)
+
+        ax.plot(route_x, route_y, "lime", linewidth=4)
+
 
     st.pyplot(fig, clear_figure=True)
 
