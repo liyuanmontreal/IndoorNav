@@ -8,6 +8,10 @@ A minimal indoor navigation prototype using:
 - A* pathfinding
 - Streamlit UI
 - Matplotlib visualization
+- 
+- 
+ v1.2
+Features: floor map + turn instructions + corridor blocking
 
 ## Run
 ```
